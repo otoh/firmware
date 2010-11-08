@@ -18,6 +18,26 @@
 #include <Servo.h>
 #include <Firmata.h>
 
+////////////////////////////////////////
+// WAVEFORM + TIMELINE
+////////////////////////////////////////
+#include <Maxim.h>
+
+#define OTOH_TIMELINE_MAX       2
+#define OTOH_TIMELINE_REGISTERS 7
+#define OTOH_TIMELINE_COLUMNS   8
+
+#define OTOH_DATA_IN    12
+#define OTOH_LOAD       13
+#define OTOH_CLOCK      11
+#define OTOH_MAX_IN_USE 3
+
+boolean debug = false;
+
+int values[] = {1, 2, 4, 8, 16, 32, 64, 128};
+
+Maxim maxim(OTOH_DATA_IN, OTOH_LOAD, OTOH_CLOCK, OTOH_MAX_IN_USE);
+
 /*==============================================================================
  * GLOBAL VARIABLES
  *============================================================================*/
@@ -266,6 +286,208 @@ void blinkLed()
   }
 }
 
+////////////////////////////////////////////////
+// TIMELINE
+////////////////////////////////////////////////
+int timelineMax = 2;
+int timelineRegConversion[] = {1,5,7,3,4,6,2};
+int timelineColConversion[] = {8,64,2,32,1,16,4,128};
+unsigned long timelinePreviousMillis[] = {0, 0};  // for comparison with currentMillis
+int timelineSpeed[] = {250, 250};
+boolean timelineIsOn[] = {true, true};
+int timelineOffset[] = {11, 3};
+int timelineOrientation[] = {true, false}; // clockwise = true
+int timelineLimit[] = {7, 14};
+int ti_0 = timelineOrientation[0] ? 0 : timelineLimit[0];
+int ti_1 = timelineOrientation[1] ? 0 : timelineLimit[1];
+int ti[] = {ti_0, ti_1};
+int previous_reg_0 = (timelineOffset[0] / OTOH_TIMELINE_COLUMNS) % OTOH_TIMELINE_REGISTERS;
+int previous_reg_1 = (timelineOffset[1] / OTOH_TIMELINE_COLUMNS) % OTOH_TIMELINE_REGISTERS;
+int previous_reg[] = {previous_reg_0, previous_reg_1};
+int reg[] = {0, 0};
+int col[] = {0, 0};
+int timelineColVal;
+
+void timelineAsyncCall() {
+  for(int i = 0; i < 2; i++) {
+    if (timelineIsOn[i] && (currentMillis - timelinePreviousMillis[i] > timelineSpeed[i])) {
+      timelinePreviousMillis[i] += timelineSpeed[i];
+      timelineAsync(i);
+    }
+  }
+}
+
+void timelineAsync(int i) {
+  reg[i] = ((ti[i]+timelineOffset[i]) / OTOH_TIMELINE_COLUMNS) % OTOH_TIMELINE_REGISTERS;
+  col[i] = (ti[i]+timelineOffset[i]) % OTOH_TIMELINE_COLUMNS;
+  
+  if (reg[0] == reg[1]) {
+    timelineColVal = timelineColConversion[col[0]] ^ timelineColConversion[col[1]];
+  }
+  else {
+    timelineColVal = timelineColConversion[col[i]];
+  }
+  
+  maxim.one(OTOH_TIMELINE_MAX, timelineRegConversion[reg[i]], timelineColVal);
+  
+  if(debug) {
+    Serial.print("\n");
+    Serial.print(i);
+    Serial.print(" -- ");
+    Serial.print(ti[i]);
+    Serial.print(" -- ");
+    Serial.print(timelineRegConversion[reg[i]]);
+    Serial.print(", ");
+    Serial.print(timelineColVal);
+  }
+  
+  if(previous_reg[i] != reg[i]) {
+    if (previous_reg[i] == reg[1] || previous_reg[i] == reg[0]) {
+      if(debug) {
+        Serial.print(" --> YOO! -->  ");
+      }
+      if (0 == i) {
+        timelineColVal = timelineColConversion[col[1]];
+      }
+      else {
+        timelineColVal = timelineColConversion[col[0]];
+      }
+    }
+    else {
+      timelineColVal = 0;
+    }
+    
+    maxim.one(OTOH_TIMELINE_MAX, timelineRegConversion[previous_reg[i]], timelineColVal);
+    
+    if(debug) {
+      Serial.print(" --> (previous_reg[i] != reg[i]) -->  ");
+      Serial.print(i);
+      Serial.print(" -- ");
+      Serial.print(ti[i]);
+      Serial.print(" -- ");
+      Serial.print(timelineRegConversion[reg[i]]);
+      Serial.print(", ");
+      Serial.print(timelineColVal);
+    }
+  }
+  
+  previous_reg[i] = reg[i];
+  
+  if (timelineOrientation[i]) {
+    ti[i]++;
+    
+    if(ti[i] > timelineLimit[i]-1) {
+      ti[i] = 0;
+    }
+  }
+  else {
+    ti[i]--;
+    
+    if(ti[i] < 1) {
+      ti[i] = timelineLimit[i];
+    }
+  }
+}
+
+////////////////////////////////////////////////
+// WAVEFORM
+////////////////////////////////////////////////
+int waveformMax[] = {1, 3};
+int waveformRegConversion[] = {1,5,7,3,4,8,6,2};
+int waveformColConversion[] = {64,2,32,1,8,128,4,16};
+int waveformRegValue[][8] = {{0,0,0,0,0,0,0,0},{0,0,0,0,0,0,0,0}};
+int vel = 100;
+
+// examples
+int cuorizini[] = {4,14,7,14,4,0,4,14,7,14,4,0,4,14,7,14,4,0,4,14,7,14,4,0,4,14,7,14,4,0,0,0};
+int otohWF[] = {0,6,9,6,0,8,15,8,0,6,9,6,0,15,2,15,0,6,9,6,0,8,15,8,0,6,9,6,0,15,2,15};
+int wave[] = {1,3,7,15,7,3,1,3,7,15,7,3,1,3,7,15,7,3,1,3,7,15,7,3,1,3,7,15,7,3,1,0};
+int squares[] = {15,9,9,15,15,9,9,15,15,9,9,15,15,9,9,15,15,9,9,15,15,9,9,15,15,9,9,15,15,9,9,15};
+int triangles[] = {1,3,7,15,1,3,7,15,1,3,7,15,1,3,7,15,1,3,7,15,1,3,7,15,1,3,7,15,1,3,7,15};
+
+// x   => [0, 31]
+// val => [0, 15]
+void waveformFuncOn(int x, byte val) {
+  if(x > 15) {
+    if(x < 24) {
+      x += 8;
+    }
+    else {
+      x -= 8;
+    }
+  }
+  
+  int waveformMaxNum = x / 16;
+  int reg, col;
+  
+  x %= 16;
+  
+  if(x < 8) {
+    reg = -1 * ((x % 8) - 7);
+  }
+  else {
+    reg = x % 8;
+  }
+  
+  if(x < 8) {
+    for(int i = 0; i < 4; i++) {
+      if((val >> i) & 1) {
+        if(0 == waveformMaxNum) {
+          waveformRegValue[waveformMaxNum][reg] ^= waveformColConversion[i+4];
+        }
+        else {
+          waveformRegValue[waveformMaxNum][reg] ^= waveformColConversion[i];
+        }
+      }
+    }
+  }
+  else {
+    for(int i = 0; i < 4; i++) {
+      if((val >> i) & 1) {
+        if(0 == waveformMaxNum) {
+          waveformRegValue[waveformMaxNum][reg] ^= waveformColConversion[i];
+        }
+        else {
+          waveformRegValue[waveformMaxNum][reg] ^= waveformColConversion[i+4];
+        }
+      }
+    }
+  }
+  
+  if(debug) {
+    Serial.print("\n");
+    Serial.print(x);
+    Serial.print(", ");
+    Serial.print(waveformMaxNum);
+    Serial.print(", ");
+    Serial.print(waveformRegConversion[reg]);
+    Serial.print(", ");
+    Serial.print(waveformRegValue[waveformMaxNum][reg]);
+  }
+  
+  maxim.one(waveformMax[waveformMaxNum], waveformRegConversion[reg], waveformRegValue[waveformMaxNum][reg]);
+}
+
+void waveformReset() {
+  for(int i = 0; i < 2; i++) {
+    for(int reg = 0; reg < 8; reg++) {
+      waveformRegValue[i][reg] = 0;
+      maxim.one(i, reg, 0);
+    }
+  }
+}
+
+void waveform() {
+  for(int i = 0; i < 32; i++) {
+    waveformFuncOn(i, cuorizini[i]);
+//    waveformFuncOn(i, otohWF[i]);
+//    waveformFuncOn(i, wave[i]);
+//    waveformFuncOn(i, squares[i]);
+//    waveformFuncOn(i, triangles[i]);
+    delay(vel);
+  }
+}
+
 ////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////
@@ -325,6 +547,8 @@ void sysexCallback(byte command, byte argc, byte *argv)
  *============================================================================*/
 void setup() 
 {
+  waveform();
+  
   // initialize the digital pin as an output:
   pinMode(ledPin, OUTPUT);
   
@@ -387,6 +611,13 @@ void loop()
 
   currentMillis = millis();
   blinkLed();
+  
+  currentMillis = millis();
+  timelineAsyncCall();
+  
+  if(debug && currentMillis > 3000) {
+    debug = false;
+  }
 
   /* SEND FTDI WRITE BUFFER - make sure that the FTDI buffer doesn't go over
    * 60 bytes. use a timer to sending an event character every 4 ms to
