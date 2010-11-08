@@ -259,13 +259,15 @@ int delayValue;
 
 void turnOn()
 {
-  digitalWrite(ledPin, HIGH);   // set the LED on
+  //digitalWrite(ledPin, HIGH);   // set the LED on
+  maxim.one(2, 1, 1);
   ledIsOn = true;
 }
 
 void turnOff()
 {
-  digitalWrite(ledPin, LOW);    // set the LED off
+  //digitalWrite(ledPin, LOW);    // set the LED off
+  maxim.one(2, 1, 0);
   ledIsOn = false;
 }
 
@@ -290,16 +292,17 @@ void blinkLed()
 // TIMELINE
 ////////////////////////////////////////////////
 #define TIMELINE_START 0x05 // 5
+#define TIMELINE_STOP  0x06 // 6
 
 int timelineMax = 2;
 int timelineRegConversion[] = {1,5,7,3,4,6,2};
 int timelineColConversion[] = {8,64,2,32,1,16,4,128};
 unsigned long timelinePreviousMillis[] = {0, 0};  // for comparison with currentMillis
 int timelineSpeed[] = {250, 250};
-boolean timelineIsOn[] = {true, true};
+boolean timelineIsOn[] = {false, false};
 int timelineOffset[] = {11, 3};
-int timelineOrientation[] = {true, false}; // clockwise = true
-int timelineLimit[] = {7, 14};
+int timelineOrientation[] = {false, false}; // clockwise = true
+int timelineLimit[] = {56, 56};
 int ti_0 = timelineOrientation[0] ? 0 : timelineLimit[0];
 int ti_1 = timelineOrientation[1] ? 0 : timelineLimit[1];
 int ti[] = {ti_0, ti_1};
@@ -323,7 +326,7 @@ void timelineAsync(int i) {
   reg[i] = ((ti[i]+timelineOffset[i]) / OTOH_TIMELINE_COLUMNS) % OTOH_TIMELINE_REGISTERS;
   col[i] = (ti[i]+timelineOffset[i]) % OTOH_TIMELINE_COLUMNS;
   
-  if (reg[0] == reg[1]) {
+  if (reg[0] == reg[1] && timelineIsOn[0] && timelineIsOn[1]) {
     timelineColVal = timelineColConversion[col[0]] ^ timelineColConversion[col[1]];
   }
   else {
@@ -348,11 +351,12 @@ void timelineAsync(int i) {
       if(debug) {
         Serial.print(" --> YOO! -->  ");
       }
-      if (0 == i) {
-        timelineColVal = timelineColConversion[col[1]];
+      
+      if(timelineIsOn[-1*(1-i)]) {
+        timelineColVal = timelineColConversion[col[-1*(1-i)]];
       }
       else {
-        timelineColVal = timelineColConversion[col[0]];
+        timelineColVal = 0;
       }
     }
     else {
@@ -391,9 +395,18 @@ void timelineAsync(int i) {
   }
 }
 
+void timelineReset() {
+  for(int reg = 1; reg < 8; reg++) {
+    timelineColVal = 0;
+    maxim.one(OTOH_TIMELINE_MAX, reg, timelineColVal);
+  }
+}
+
 ////////////////////////////////////////////////
 // WAVEFORM
 ////////////////////////////////////////////////
+#define WAVEFORM 0x07 // 7
+
 int waveformMax[] = {1, 3};
 int waveformRegConversion[] = {1,5,7,3,4,8,6,2};
 int waveformColConversion[] = {64,2,32,1,8,128,4,16};
@@ -481,13 +494,53 @@ void waveformReset() {
 
 void waveform() {
   for(int i = 0; i < 32; i++) {
-    waveformFuncOn(i, cuorizini[i]);
-//    waveformFuncOn(i, otohWF[i]);
+//    waveformFuncOn(i, cuorizini[i]);
+    waveformFuncOn(i, otohWF[i]);
 //    waveformFuncOn(i, wave[i]);
 //    waveformFuncOn(i, squares[i]);
 //    waveformFuncOn(i, triangles[i]);
     delay(vel);
   }
+}
+
+////////////////////////////////////////////////////////
+// SHIFTIN
+////////////////////////////////////////////////////////
+#define SHIFTIN_MESSAGE 0xA0
+
+int shin_latchPin = 9;
+int shin_dataPin = 10;
+int shin_clockPin = 8;
+
+byte switchVar1 = 0;
+byte switchVar2 = 0;
+
+byte shiftIn(int myDataPin, int myClockPin) {
+  int i;
+  int temp = 0;
+  int pinState;
+  byte myDataIn = 0;
+  
+  pinMode(myClockPin, OUTPUT);
+  pinMode(myDataPin, INPUT);
+  
+  for (i=7; i>=0; i--){
+    digitalWrite(myClockPin, 0);
+    delayMicroseconds(1);
+    
+    temp = digitalRead(myDataPin);
+    if (temp) {
+    
+      pinState = 1;
+      myDataIn = myDataIn | (1 << i);
+    
+    }else {
+      pinState = 0;
+    }
+    
+    digitalWrite(myClockPin, 1);
+  }
+  return myDataIn;
 }
 
 ////////////////////////////////////////////////////////
@@ -531,22 +584,37 @@ void sysexCallback(byte command, byte argc, byte *argv)
   case TURN_OFF:
     turnOff();
     break;
-  case TIMELINE_START:
-    if(argc > 2) {
-      byte t_id = argv[0];
-      timelineIsOn[t_id] = true;
-      timelineSpeed[t_id] = argv[1] + (argv[2] << 7);
-      timelineOffset[t_id] = argv[3];
-      timelineOrientation[t_id] = 0 == argv[4] ? false : true; // clockwise = true
-      timelineLimit[t_id] = argv[5];
-      ti[t_id] = timelineOrientation[t_id] ? 0 : timelineLimit[t_id];
-      previous_reg[t_id] = (timelineOffset[t_id] / OTOH_TIMELINE_COLUMNS) % OTOH_TIMELINE_REGISTERS;
-    }
-    else {
-      byte t_id = argv[0];
-      timelineIsOn[t_id] = false;
-    }
+  case TIMELINE_START: {
+    // argv[0] --> [1,2] --> timeline [0,1]
+    timelineReset();
+    int t_id = argv[0] - 1;
+    timelineIsOn[t_id] = true;
+    timelineSpeed[t_id] = argv[1] + (argv[2] << 7);
+    timelineOffset[t_id] = argv[3];
+    // argv[0] --> [1,2] --> timeline orientation [true,false]
+    timelineOrientation[t_id] = (1 == argv[4] ? true : false); // clockwise = true
+    timelineLimit[t_id] = argv[5];
+    ti[t_id] = timelineOrientation[t_id] ? 0 : timelineLimit[t_id];
+    previous_reg[t_id] = (timelineOffset[t_id] / OTOH_TIMELINE_COLUMNS) % OTOH_TIMELINE_REGISTERS;
+    timelinePreviousMillis[t_id] = currentMillis;
     break;
+  }
+  case TIMELINE_STOP: {
+    // argv[0] --> [1,2] --> timeline [0,1]
+    int t_id = argv[0] - 1;
+    timelineIsOn[t_id] = false;
+    //timelinePreviousMillis[t_id] = 0;
+    timelineReset();
+    break;
+  }
+  case WAVEFORM: {
+    // argv[0] --> [1..32] --> waveform reg [0,31]
+    int reg = argv[0] - 1;
+    // argv[0] --> [1..16] --> waveform reg [0,15]
+    byte col = argv[1] - 1;
+    waveformFuncOn(reg,col);
+    break;
+  }
   case SAMPLING_INTERVAL:
     if (argc > 1)
       samplingInterval = argv[0] + (argv[1] << 7);
@@ -565,7 +633,12 @@ void sysexCallback(byte command, byte argc, byte *argv)
  *============================================================================*/
 void setup() 
 {
-  waveform();
+  //waveform();
+  
+  // initialize shift in
+  pinMode(shin_latchPin, OUTPUT);
+  pinMode(shin_clockPin, OUTPUT);
+  pinMode(shin_dataPin, INPUT);
   
   // initialize the digital pin as an output:
   pinMode(ledPin, OUTPUT);
@@ -609,6 +682,20 @@ void setup()
   for (i=0; i < TOTAL_PORTS; i++) {
     outputPort(i, readPort(i), true);
   }
+  
+  //
+  // FIX ME: this doesn't work!
+  //
+  // initialize digital ins
+  setPinModeCallback(2, INPUT);
+  setPinModeCallback(3, INPUT);
+  setPinModeCallback(4, INPUT);
+  setPinModeCallback(5, INPUT);
+  setPinModeCallback(6, INPUT);
+  setPinModeCallback(7, INPUT);
+  
+  pinMode(6, INPUT);
+  pinMode(7, INPUT);
 }
 
 /*==============================================================================
@@ -616,6 +703,18 @@ void setup()
  *============================================================================*/
 void loop() 
 {
+  // shift in
+  digitalWrite(shin_latchPin,1);
+  delayMicroseconds(20);
+  digitalWrite(shin_latchPin,0);
+  switchVar1 = shiftIn(shin_dataPin, shin_clockPin);
+  switchVar2 = shiftIn(shin_dataPin, shin_clockPin);
+  Serial.print(SHIFTIN_MESSAGE, BYTE);
+  Serial.print(switchVar1, BYTE);
+  Serial.print(switchVar2, BYTE);
+  delay(10);
+  // end shift in
+  
   byte pin, analogPin;
 
   /* DIGITALREAD - as fast as possible, check for changes and output them to the
