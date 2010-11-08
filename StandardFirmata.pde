@@ -289,6 +289,8 @@ void blinkLed()
 ////////////////////////////////////////////////
 // TIMELINE
 ////////////////////////////////////////////////
+#define TIMELINE_START 0x05 // 5
+
 int timelineMax = 2;
 int timelineRegConversion[] = {1,5,7,3,4,6,2};
 int timelineColConversion[] = {8,64,2,32,1,16,4,128};
@@ -528,6 +530,22 @@ void sysexCallback(byte command, byte argc, byte *argv)
     break;
   case TURN_OFF:
     turnOff();
+    break;
+  case TIMELINE_START:
+    if(argc > 2) {
+      byte t_id = argv[0];
+      timelineIsOn[t_id] = true;
+      timelineSpeed[t_id] = argv[1] + (argv[2] << 7);
+      timelineOffset[t_id] = argv[3];
+      timelineOrientation[t_id] = 0 == argv[4] ? false : true; // clockwise = true
+      timelineLimit[t_id] = argv[5];
+      ti[t_id] = timelineOrientation[t_id] ? 0 : timelineLimit[t_id];
+      previous_reg[t_id] = (timelineOffset[t_id] / OTOH_TIMELINE_COLUMNS) % OTOH_TIMELINE_REGISTERS;
+    }
+    else {
+      byte t_id = argv[0];
+      timelineIsOn[t_id] = false;
+    }
     break;
   case SAMPLING_INTERVAL:
     if (argc > 1)
