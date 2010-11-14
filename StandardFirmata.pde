@@ -408,6 +408,29 @@ void timelineReset() {
   }
 }
 
+void timelineStartCallback(byte argc, byte *argv) {
+  // argv[0] --> [1,2] --> timeline [0,1]
+  timelineReset();
+  int t_id = argv[0] - 1;
+  timelineIsOn[t_id] = true;
+  timelineSpeed[t_id] = argv[1] + (argv[2] << 7);
+  timelineOffset[t_id] = argv[3];
+  // argv[0] --> [1,2] --> timeline orientation [true,false]
+  timelineOrientation[t_id] = (1 == argv[4] ? true : false); // clockwise = true
+  timelineLimit[t_id] = argv[5];
+  ti[t_id] = timelineOrientation[t_id] ? 0 : timelineLimit[t_id];
+  previous_reg[t_id] = (timelineOffset[t_id] / OTOH_TIMELINE_COLUMNS) % OTOH_TIMELINE_REGISTERS;
+  timelinePreviousMillis[t_id] = currentMillis;
+}
+
+void timelineStopCallback(byte argc, byte *argv) {
+  // argv[0] --> [1,2] --> timeline [0,1]
+  int t_id = argv[0] - 1;
+  timelineIsOn[t_id] = false;
+  //timelinePreviousMillis[t_id] = 0;
+  timelineReset();
+}
+
 ////////////////////////////////////////////////
 // WAVEFORM
 ////////////////////////////////////////////////
@@ -507,6 +530,14 @@ void waveform() {
 //    waveformFuncOn(i, triangles[i]);
     delay(vel);
   }
+}
+
+void waveformCallback(byte argc, byte *argv) {
+  // argv[0] --> [1..32] --> waveform reg [0,31]
+  int reg = argv[0] - 1;
+  // argv[0] --> [1..16] --> waveform reg [0,15]
+  byte col = argv[1] - 1;
+  waveformFuncOn(reg,col);
 }
 
 ////////////////////////////////////////////////////////
@@ -610,37 +641,15 @@ void sysexCallback(byte command, byte argc, byte *argv)
   case TURN_OFF:
     turnOff();
     break;
-  case TIMELINE_START: {
-    // argv[0] --> [1,2] --> timeline [0,1]
-    timelineReset();
-    int t_id = argv[0] - 1;
-    timelineIsOn[t_id] = true;
-    timelineSpeed[t_id] = argv[1] + (argv[2] << 7);
-    timelineOffset[t_id] = argv[3];
-    // argv[0] --> [1,2] --> timeline orientation [true,false]
-    timelineOrientation[t_id] = (1 == argv[4] ? true : false); // clockwise = true
-    timelineLimit[t_id] = argv[5];
-    ti[t_id] = timelineOrientation[t_id] ? 0 : timelineLimit[t_id];
-    previous_reg[t_id] = (timelineOffset[t_id] / OTOH_TIMELINE_COLUMNS) % OTOH_TIMELINE_REGISTERS;
-    timelinePreviousMillis[t_id] = currentMillis;
+  case TIMELINE_START:
+    timelineStartCallback(argc, argv);
     break;
-  }
-  case TIMELINE_STOP: {
-    // argv[0] --> [1,2] --> timeline [0,1]
-    int t_id = argv[0] - 1;
-    timelineIsOn[t_id] = false;
-    //timelinePreviousMillis[t_id] = 0;
-    timelineReset();
+  case TIMELINE_STOP:
+    timelineStopCallback(argc, argv);
     break;
-  }
-  case WAVEFORM: {
-    // argv[0] --> [1..32] --> waveform reg [0,31]
-    int reg = argv[0] - 1;
-    // argv[0] --> [1..16] --> waveform reg [0,15]
-    byte col = argv[1] - 1;
-    waveformFuncOn(reg,col);
+  case WAVEFORM:
+    waveformCallback(argc, argv);
     break;
-  }
   case SAMPLING_INTERVAL:
     if (argc > 1)
       samplingInterval = argv[0] + (argv[1] << 7);
