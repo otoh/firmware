@@ -300,6 +300,9 @@ void blinkLed()
 #define TIMELINE_START 0x05 // 5
 #define TIMELINE_STOP  0x06 // 6
 
+#define TIMELINE_DEFAULT_OFFSET 32
+#define TIMELINE_LENGTH         56
+
 int timelineMax = 2;
 int timelineRegConversion[] = {1,5,7,3,4,6,2};
 int timelineColConversion[] = {8,64,2,32,1,16,4,128};
@@ -308,7 +311,7 @@ int timelineSpeed[] = {250, 250};
 boolean timelineIsOn[] = {false, false};
 int timelineOffset[] = {11, 3};
 int timelineOrientation[] = {false, false}; // clockwise = true
-int timelineLimit[] = {56, 56};
+int timelineLimit[] = {TIMELINE_LENGTH, TIMELINE_LENGTH};
 int ti_0 = timelineOrientation[0] ? 0 : timelineLimit[0];
 int ti_1 = timelineOrientation[1] ? 0 : timelineLimit[1];
 int ti[] = {ti_0, ti_1};
@@ -426,7 +429,7 @@ void timelineStartCallback(byte argc, byte *argv) {
   
   // timeline offset (start point)
   // argv[4] --> [0..55]
-  timelineOffset[t_id] = argv[4];
+  timelineOffset[t_id] = (TIMELINE_DEFAULT_OFFSET + argv[4]) % TIMELINE_LENGTH;
   
   // timeline limit (end point)
   // argv[5] --> [1,56]
@@ -450,7 +453,8 @@ void timelineStopCallback(byte argc, byte *argv) {
 ////////////////////////////////////////////////
 // WAVEFORM
 ////////////////////////////////////////////////
-#define WAVEFORM 0x07 // 7
+#define WAVEFORM       0x07 // 7
+#define WAVEFORM_CLEAR 0x08 // 8
 
 int waveformMax[] = {1, 3};
 int waveformRegConversion[] = {1,5,7,3,4,8,6,2};
@@ -458,11 +462,11 @@ int waveformColConversion[] = {64,2,32,1,8,128,4,16};
 int waveformRegValue[][8] = {{0,0,0,0,0,0,0,0},{0,0,0,0,0,0,0,0}};
 int vel = 100;
 
-// examples
+// waveform examples
 int cuorizini[] = {4,14,7,14,4,0,4,14,7,14,4,0,4,14,7,14,4,0,4,14,7,14,4,0,4,14,7,14,4,0,0,0};
-int otohWF[] = {0,6,9,6,0,8,15,8,0,6,9,6,0,15,2,15,0,6,9,6,0,8,15,8,0,6,9,6,0,15,2,15};
-int wave[] = {1,3,7,15,7,3,1,3,7,15,7,3,1,3,7,15,7,3,1,3,7,15,7,3,1,3,7,15,7,3,1,0};
-int squares[] = {15,9,9,15,15,9,9,15,15,9,9,15,15,9,9,15,15,9,9,15,15,9,9,15,15,9,9,15,15,9,9,15};
+int otohWF[]    = {0,6,9,6,0,8,15,8,0,6,9,6,0,15,2,15,0,6,9,6,0,8,15,8,0,6,9,6,0,15,2,15};
+int wave[]      = {1,3,7,15,7,3,1,3,7,15,7,3,1,3,7,15,7,3,1,3,7,15,7,3,1,3,7,15,7,3,1,0};
+int squares[]   = {15,9,9,15,15,9,9,15,15,9,9,15,15,9,9,15,15,9,9,15,15,9,9,15,15,9,9,15,15,9,9,15};
 int triangles[] = {1,3,7,15,1,3,7,15,1,3,7,15,1,3,7,15,1,3,7,15,1,3,7,15,1,3,7,15,1,3,7,15};
 
 // x   => [0, 31]
@@ -532,7 +536,7 @@ void waveformReset() {
   for(int i = 0; i < 2; i++) {
     for(int reg = 0; reg < 8; reg++) {
       waveformRegValue[i][reg] = 0;
-      maxim.one(i, reg, 0);
+      maxim.one(waveformMax[i], waveformRegConversion[reg], 0);
     }
   }
 }
@@ -554,6 +558,10 @@ void waveformCallback(byte argc, byte *argv) {
   // argv[0] --> [1..16] --> waveform reg [0,15]
   byte col = argv[1] - 1;
   waveformFuncOn(reg,col);
+}
+
+void waveformClearCallback() {
+  waveformReset();
 }
 
 ////////////////////////////////////////////////////////
@@ -665,6 +673,9 @@ void sysexCallback(byte command, byte argc, byte *argv)
     break;
   case WAVEFORM:
     waveformCallback(argc, argv);
+    break;
+  case WAVEFORM_CLEAR:
+    waveformClearCallback();
     break;
   case SAMPLING_INTERVAL:
     if (argc > 1)
