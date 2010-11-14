@@ -409,24 +409,40 @@ void timelineReset() {
 }
 
 void timelineStartCallback(byte argc, byte *argv) {
-  // argv[0] --> [1,2] --> timeline [0,1]
   timelineReset();
+  
+  // timeline id
+  // argv[0] --> [1, 2] --> timeline [0, 1]
   int t_id = argv[0] - 1;
   timelineIsOn[t_id] = true;
+  
+  // timeline speed
+  // argv[1..2] --> speed [0,16383] ms
   timelineSpeed[t_id] = argv[1] + (argv[2] << 7);
-  timelineOffset[t_id] = argv[3];
-  // argv[0] --> [1,2] --> timeline orientation [true,false]
-  timelineOrientation[t_id] = (1 == argv[4] ? true : false); // clockwise = true
+  
+  // timeline orientation
+  // argv[3] --> [1, 2] --> [true, false] --> [clockwise, anticlockwise]
+  timelineOrientation[t_id] = (1 == argv[3] ? true : false);
+  
+  // timeline offset (start point)
+  // argv[4] --> [0..55]
+  timelineOffset[t_id] = argv[4];
+  
+  // timeline limit (end point)
+  // argv[5] --> [1,56]
   timelineLimit[t_id] = argv[5];
+  
   ti[t_id] = timelineOrientation[t_id] ? 0 : timelineLimit[t_id];
   previous_reg[t_id] = (timelineOffset[t_id] / OTOH_TIMELINE_COLUMNS) % OTOH_TIMELINE_REGISTERS;
   timelinePreviousMillis[t_id] = currentMillis;
 }
 
 void timelineStopCallback(byte argc, byte *argv) {
-  // argv[0] --> [1,2] --> timeline [0,1]
+  // timeline id
+  // argv[0] --> [1, 2] --> timeline [0, 1]
   int t_id = argv[0] - 1;
   timelineIsOn[t_id] = false;
+  
   //timelinePreviousMillis[t_id] = 0;
   timelineReset();
 }
