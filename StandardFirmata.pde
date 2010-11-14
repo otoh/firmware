@@ -27,10 +27,16 @@
 #define OTOH_TIMELINE_REGISTERS 7
 #define OTOH_TIMELINE_COLUMNS   8
 
+// Maxim constants
 #define OTOH_DATA_IN    12
 #define OTOH_LOAD       13
 #define OTOH_CLOCK      11
 #define OTOH_MAX_IN_USE 3
+
+// Shiftin constants
+#define OTOH_SI_LATCH  9
+#define OTOH_SI_DATA   10
+#define OTOH_SI_CLOCK  8
 
 boolean debug = false;
 
@@ -508,12 +514,17 @@ void waveform() {
 ////////////////////////////////////////////////////////
 #define SHIFTIN_MESSAGE 0xA0
 
-int shin_latchPin = 9;
-int shin_dataPin = 10;
-int shin_clockPin = 8;
+unsigned long shiftInPreviousMillis = 0;  // for comparison with currentMillis
+int shiftInSamplingInterval = 10;         // how often to run the main loop (in ms)
 
 byte switchVar1 = 0;
 byte switchVar2 = 0;
+
+void setupShiftIn() {
+  pinMode(OTOH_SI_LATCH, OUTPUT);
+  pinMode(OTOH_SI_CLOCK, OUTPUT);
+  pinMode(OTOH_SI_DATA, INPUT);
+}
 
 byte shiftIn(int myDataPin, int myClockPin) {
   int i;
@@ -541,6 +552,21 @@ byte shiftIn(int myDataPin, int myClockPin) {
     digitalWrite(myClockPin, 1);
   }
   return myDataIn;
+}
+
+void loopShiftIn() {
+  if (currentMillis - shiftInPreviousMillis > shiftInSamplingInterval) {
+    shiftInPreviousMillis += shiftInSamplingInterval;
+    
+    digitalWrite(OTOH_SI_LATCH,1);
+    delayMicroseconds(20);
+    digitalWrite(OTOH_SI_LATCH,0);
+    switchVar1 = shiftIn(OTOH_SI_DATA, OTOH_SI_CLOCK);
+    switchVar2 = shiftIn(OTOH_SI_DATA, OTOH_SI_CLOCK);
+    Serial.print(SHIFTIN_MESSAGE, BYTE);
+    Serial.print(switchVar1, BYTE);
+    Serial.print(switchVar2, BYTE);
+  }
 }
 
 ////////////////////////////////////////////////////////
@@ -636,9 +662,7 @@ void setup()
   //waveform();
   
   // initialize shift in
-  pinMode(shin_latchPin, OUTPUT);
-  pinMode(shin_clockPin, OUTPUT);
-  pinMode(shin_dataPin, INPUT);
+  setupShiftIn();
   
   // initialize the digital pin as an output:
   pinMode(ledPin, OUTPUT);
@@ -693,9 +717,6 @@ void setup()
   setPinModeCallback(5, INPUT);
   setPinModeCallback(6, INPUT);
   setPinModeCallback(7, INPUT);
-  
-  pinMode(6, INPUT);
-  pinMode(7, INPUT);
 }
 
 /*==============================================================================
@@ -703,17 +724,9 @@ void setup()
  *============================================================================*/
 void loop() 
 {
-  // shift in
-  digitalWrite(shin_latchPin,1);
-  delayMicroseconds(20);
-  digitalWrite(shin_latchPin,0);
-  switchVar1 = shiftIn(shin_dataPin, shin_clockPin);
-  switchVar2 = shiftIn(shin_dataPin, shin_clockPin);
-  Serial.print(SHIFTIN_MESSAGE, BYTE);
-  Serial.print(switchVar1, BYTE);
-  Serial.print(switchVar2, BYTE);
-  delay(10);
-  // end shift in
+  // shift in loop
+  currentMillis = millis();
+  loopShiftIn();
   
   byte pin, analogPin;
 
@@ -726,12 +739,15 @@ void loop()
   while(Firmata.available())
     Firmata.processInput();
 
+  // blinkLed debug function loop
   currentMillis = millis();
   blinkLed();
   
+  // timeline loop
   currentMillis = millis();
   timelineAsyncCall();
   
+  // NOTE: turn off debug after 3 secs if debug is on
   if(debug && currentMillis > 3000) {
     debug = false;
   }
