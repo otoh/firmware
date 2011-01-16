@@ -1,18 +1,19 @@
+////////////////////////////////////////
+// OTOH FIRMWARE
+////////////////////////////////////////
+
 /* 
  * TODO: use Program Control to load stored profiles from EEPROM
+ * TODO: update to the latest version of StandardFirmata
  */
 
 #include <Servo.h>
 #include <Firmata.h>
 
-////////////////////////////////////////
-// WAVEFORM + TIMELINE
-////////////////////////////////////////
+//
+// OTOH CONSTANTS
+//
 #include <Maxim.h>
-
-#define OTOH_TIMELINE_MAX       2
-#define OTOH_TIMELINE_REGISTERS 7
-#define OTOH_TIMELINE_COLUMNS   8
 
 // Maxim constants
 #define OTOH_DATA_IN    12
@@ -20,11 +21,88 @@
 #define OTOH_CLOCK      11
 #define OTOH_MAX_IN_USE 3
 
-// Shiftin constants
+//
+// SHIFT IN
+//
 #define OTOH_SI_LATCH  9
 #define OTOH_SI_DATA   10
 #define OTOH_SI_CLOCK  8
 
+#define SHIFTIN_MESSAGE 0xA0
+
+unsigned long shiftInPreviousMillis = 0;  // for comparison with currentMillis
+int shiftInSamplingInterval = 10;         // how often to run the main loop (in ms)
+
+byte switchVar1 = 0;
+byte switchVar2 = 0;
+
+//
+// BLINK LED
+//
+#define BLINK_LED 0x02 // 2
+#define TURN_ON   0x03 // 3
+#define TURN_OFF  0x04 // 4
+
+int ledPin = 13; // LED connected to digital pin 13
+boolean ledIsOn = false;
+boolean blinkLedOn = false;
+unsigned long blinkPreviousMillis;  // for comparison with currentMillis
+int delayValue;
+
+//
+// TIMELINE
+//
+#define OTOH_TIMELINE_MAX       2
+#define OTOH_TIMELINE_REGISTERS 7
+#define OTOH_TIMELINE_COLUMNS   8
+
+#define TIMELINE_START 0x05 // 5
+#define TIMELINE_STOP  0x06 // 6
+
+#define TIMELINE_DEFAULT_OFFSET 32
+#define TIMELINE_LENGTH         56
+
+int timelineMax = 2;
+int timelineRegConversion[] = {1,5,7,3,4,6,2};
+int timelineColConversion[] = {8,64,2,32,1,16,4,128};
+unsigned long timelinePreviousMillis[] = {0, 0};  // for comparison with currentMillis
+int timelineSpeed[] = {250, 250};
+boolean timelineIsOn[] = {false, false};
+int timelineOffset[] = {11, 3};
+int timelineOrientation[] = {false, false}; // clockwise = true
+int timelineLimit[] = {TIMELINE_LENGTH, TIMELINE_LENGTH};
+int ti_0 = timelineOrientation[0] ? 0 : timelineLimit[0];
+int ti_1 = timelineOrientation[1] ? 0 : timelineLimit[1];
+int ti[] = {ti_0, ti_1};
+int previous_reg_0 = (timelineOffset[0] / OTOH_TIMELINE_COLUMNS) % OTOH_TIMELINE_REGISTERS;
+int previous_reg_1 = (timelineOffset[1] / OTOH_TIMELINE_COLUMNS) % OTOH_TIMELINE_REGISTERS;
+int previous_reg[] = {previous_reg_0, previous_reg_1};
+int reg[] = {0, 0};
+int col[] = {0, 0};
+int timelineColVal;
+
+//
+// WAVEFORM
+//
+#define WAVEFORM       0x07 // 7
+#define WAVEFORM_CLEAR 0x08 // 8
+
+int waveformMax[] = {1, 3};
+int waveformRegConversion[] = {1,5,7,3,4,8,6,2};
+int waveformColConversion[] = {64,2,32,1,8,128,4,16};
+int waveformRegValue[][8] = {{0,0,0,0,0,0,0,0},{0,0,0,0,0,0,0,0}};
+int vel = 100;
+
+// waveform examples
+int cuorizini[] = {4,14,7,14,4,0,4,14,7,14,4,0,4,14,7,14,4,0,4,14,7,14,4,0,4,14,7,14,4,0,0,0};
+int otohWF[]    = {0,6,9,6,0,8,15,8,0,6,9,6,0,15,2,15,0,6,9,6,0,8,15,8,0,6,9,6,0,15,2,15};
+int wave[]      = {1,3,7,15,7,3,1,3,7,15,7,3,1,3,7,15,7,3,1,3,7,15,7,3,1,3,7,15,7,3,1,0};
+int squares[]   = {15,9,9,15,15,9,9,15,15,9,9,15,15,9,9,15,15,9,9,15,15,9,9,15,15,9,9,15,15,9,9,15};
+int triangles[] = {1,3,7,15,1,3,7,15,1,3,7,15,1,3,7,15,1,3,7,15,1,3,7,15,1,3,7,15,1,3,7,15};
+
+//
+// OTOH GLOBAL VARIABLES
+//
 boolean debug = false;
 
 int values[] = {1, 2, 4, 8, 16, 32, 64, 128};
@@ -235,388 +313,6 @@ void reportDigitalCallback(byte port, int value)
  * SYSEX-BASED commands
  *============================================================================*/
 
-////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////
-
-#define BLINK_LED 0x02 // 2
-#define TURN_ON   0x03 // 3
-#define TURN_OFF  0x04 // 4
-int ledPin = 13; // LED connected to digital pin 13
-boolean ledIsOn = false;
-boolean blinkLedOn = false;
-unsigned long blinkPreviousMillis;  // for comparison with currentMillis
-int delayValue;
-
-void turnOn()
-{
-  //digitalWrite(ledPin, HIGH);   // set the LED on
-  maxim.one(2, 1, 1);
-  ledIsOn = true;
-}
-
-void turnOff()
-{
-  //digitalWrite(ledPin, LOW);    // set the LED off
-  maxim.one(2, 1, 0);
-  ledIsOn = false;
-}
-
-void toggleLed() {
-  if (ledIsOn) {
-    turnOff();
-  }
-  else {
-    turnOn();
-  }
-}
-
-void blinkLed()
-{
-  if (blinkLedOn && (currentMillis - blinkPreviousMillis > delayValue / 2)) {
-    blinkPreviousMillis += delayValue / 2;
-    toggleLed();
-  }
-}
-
-////////////////////////////////////////////////
-// TIMELINE
-////////////////////////////////////////////////
-#define TIMELINE_START 0x05 // 5
-#define TIMELINE_STOP  0x06 // 6
-
-#define TIMELINE_DEFAULT_OFFSET 32
-#define TIMELINE_LENGTH         56
-
-int timelineMax = 2;
-int timelineRegConversion[] = {1,5,7,3,4,6,2};
-int timelineColConversion[] = {8,64,2,32,1,16,4,128};
-unsigned long timelinePreviousMillis[] = {0, 0};  // for comparison with currentMillis
-int timelineSpeed[] = {250, 250};
-boolean timelineIsOn[] = {false, false};
-int timelineOffset[] = {11, 3};
-int timelineOrientation[] = {false, false}; // clockwise = true
-int timelineLimit[] = {TIMELINE_LENGTH, TIMELINE_LENGTH};
-int ti_0 = timelineOrientation[0] ? 0 : timelineLimit[0];
-int ti_1 = timelineOrientation[1] ? 0 : timelineLimit[1];
-int ti[] = {ti_0, ti_1};
-int previous_reg_0 = (timelineOffset[0] / OTOH_TIMELINE_COLUMNS) % OTOH_TIMELINE_REGISTERS;
-int previous_reg_1 = (timelineOffset[1] / OTOH_TIMELINE_COLUMNS) % OTOH_TIMELINE_REGISTERS;
-int previous_reg[] = {previous_reg_0, previous_reg_1};
-int reg[] = {0, 0};
-int col[] = {0, 0};
-int timelineColVal;
-
-void timelineAsyncCall() {
-  for(int i = 0; i < 2; i++) {
-    if (timelineIsOn[i] && (currentMillis - timelinePreviousMillis[i] > timelineSpeed[i])) {
-      timelinePreviousMillis[i] += timelineSpeed[i];
-      timelineAsync(i);
-    }
-  }
-}
-
-void timelineAsync(int i) {
-  reg[i] = ((ti[i]+timelineOffset[i]) / OTOH_TIMELINE_COLUMNS) % OTOH_TIMELINE_REGISTERS;
-  col[i] = (ti[i]+timelineOffset[i]) % OTOH_TIMELINE_COLUMNS;
-  
-  if (reg[0] == reg[1] && timelineIsOn[0] && timelineIsOn[1]) {
-    timelineColVal = timelineColConversion[col[0]] ^ timelineColConversion[col[1]];
-  }
-  else {
-    timelineColVal = timelineColConversion[col[i]];
-  }
-  
-  maxim.one(OTOH_TIMELINE_MAX, timelineRegConversion[reg[i]], timelineColVal);
-  
-  if(debug) {
-    Serial.print("\n");
-    Serial.print(i);
-    Serial.print(" -- ");
-    Serial.print(ti[i]);
-    Serial.print(" -- ");
-    Serial.print(timelineRegConversion[reg[i]]);
-    Serial.print(", ");
-    Serial.print(timelineColVal);
-  }
-  
-  if(previous_reg[i] != reg[i]) {
-    if (previous_reg[i] == reg[1] || previous_reg[i] == reg[0]) {
-      if(debug) {
-        Serial.print(" --> YOO! -->  ");
-      }
-      
-      if(timelineIsOn[-1*(1-i)]) {
-        timelineColVal = timelineColConversion[col[-1*(1-i)]];
-      }
-      else {
-        timelineColVal = 0;
-      }
-    }
-    else {
-      timelineColVal = 0;
-    }
-    
-    maxim.one(OTOH_TIMELINE_MAX, timelineRegConversion[previous_reg[i]], timelineColVal);
-    
-    if(debug) {
-      Serial.print(" --> (previous_reg[i] != reg[i]) -->  ");
-      Serial.print(i);
-      Serial.print(" -- ");
-      Serial.print(ti[i]);
-      Serial.print(" -- ");
-      Serial.print(timelineRegConversion[reg[i]]);
-      Serial.print(", ");
-      Serial.print(timelineColVal);
-    }
-  }
-  
-  previous_reg[i] = reg[i];
-  
-  if (timelineOrientation[i]) {
-    ti[i]++;
-    
-    if(ti[i] > timelineLimit[i]-1) {
-      ti[i] = 0;
-    }
-  }
-  else {
-    ti[i]--;
-    
-    if(ti[i] < 1) {
-      ti[i] = timelineLimit[i];
-    }
-  }
-}
-
-void timelineReset() {
-  for(int reg = 1; reg < 8; reg++) {
-    timelineColVal = 0;
-    maxim.one(OTOH_TIMELINE_MAX, reg, timelineColVal);
-  }
-}
-
-void timelineStartCallback(byte argc, byte *argv) {
-  timelineReset();
-  
-  // timeline id
-  // argv[0] --> [1, 2] --> timeline [0, 1]
-  int t_id = argv[0] - 1;
-  timelineIsOn[t_id] = true;
-  
-  // timeline speed
-  // argv[1..2] --> speed [0,16383] ms
-  timelineSpeed[t_id] = argv[1] + (argv[2] << 7);
-  
-  // timeline orientation
-  // argv[3] --> [1, 2] --> [true, false] --> [clockwise, anticlockwise]
-  timelineOrientation[t_id] = (1 == argv[3] ? true : false);
-  
-  // timeline offset (start point)
-  // argv[4] --> [0..55]
-  timelineOffset[t_id] = (TIMELINE_DEFAULT_OFFSET + argv[4]) % TIMELINE_LENGTH;
-  
-  // timeline limit (end point)
-  // argv[5] --> [1,56]
-  timelineLimit[t_id] = argv[5];
-  
-  ti[t_id] = timelineOrientation[t_id] ? 0 : timelineLimit[t_id];
-  previous_reg[t_id] = (timelineOffset[t_id] / OTOH_TIMELINE_COLUMNS) % OTOH_TIMELINE_REGISTERS;
-  timelinePreviousMillis[t_id] = currentMillis;
-}
-
-void timelineStopCallback(byte argc, byte *argv) {
-  // timeline id
-  // argv[0] --> [1, 2] --> timeline [0, 1]
-  int t_id = argv[0] - 1;
-  timelineIsOn[t_id] = false;
-  
-  //timelinePreviousMillis[t_id] = 0;
-  timelineReset();
-}
-
-////////////////////////////////////////////////
-// WAVEFORM
-////////////////////////////////////////////////
-#define WAVEFORM       0x07 // 7
-#define WAVEFORM_CLEAR 0x08 // 8
-
-int waveformMax[] = {1, 3};
-int waveformRegConversion[] = {1,5,7,3,4,8,6,2};
-int waveformColConversion[] = {64,2,32,1,8,128,4,16};
-int waveformRegValue[][8] = {{0,0,0,0,0,0,0,0},{0,0,0,0,0,0,0,0}};
-int vel = 100;
-
-// waveform examples
-int cuorizini[] = {4,14,7,14,4,0,4,14,7,14,4,0,4,14,7,14,4,0,4,14,7,14,4,0,4,14,7,14,4,0,0,0};
-int otohWF[]    = {0,6,9,6,0,8,15,8,0,6,9,6,0,15,2,15,0,6,9,6,0,8,15,8,0,6,9,6,0,15,2,15};
-int wave[]      = {1,3,7,15,7,3,1,3,7,15,7,3,1,3,7,15,7,3,1,3,7,15,7,3,1,3,7,15,7,3,1,0};
-int squares[]   = {15,9,9,15,15,9,9,15,15,9,9,15,15,9,9,15,15,9,9,15,15,9,9,15,15,9,9,15,15,9,9,15};
-int triangles[] = {1,3,7,15,1,3,7,15,1,3,7,15,1,3,7,15,1,3,7,15,1,3,7,15,1,3,7,15,1,3,7,15};
-
-// x   => [0, 31]
-// val => [0, 15]
-void waveformFuncOn(int x, byte val) {
-  if(x > 15) {
-    if(x < 24) {
-      x += 8;
-    }
-    else {
-      x -= 8;
-    }
-  }
-  
-  int waveformMaxNum = x / 16;
-  int reg, col;
-  
-  x %= 16;
-  
-  if(x < 8) {
-    reg = -1 * ((x % 8) - 7);
-  }
-  else {
-    reg = x % 8;
-  }
-  
-  if(x < 8) {
-    for(int i = 0; i < 4; i++) {
-      if((val >> i) & 1) {
-        if(0 == waveformMaxNum) {
-          waveformRegValue[waveformMaxNum][reg] ^= waveformColConversion[i+4];
-        }
-        else {
-          waveformRegValue[waveformMaxNum][reg] ^= waveformColConversion[i];
-        }
-      }
-    }
-  }
-  else {
-    for(int i = 0; i < 4; i++) {
-      if((val >> i) & 1) {
-        if(0 == waveformMaxNum) {
-          waveformRegValue[waveformMaxNum][reg] ^= waveformColConversion[i];
-        }
-        else {
-          waveformRegValue[waveformMaxNum][reg] ^= waveformColConversion[i+4];
-        }
-      }
-    }
-  }
-  
-  if(debug) {
-    Serial.print("\n");
-    Serial.print(x);
-    Serial.print(", ");
-    Serial.print(waveformMaxNum);
-    Serial.print(", ");
-    Serial.print(waveformRegConversion[reg]);
-    Serial.print(", ");
-    Serial.print(waveformRegValue[waveformMaxNum][reg]);
-  }
-  
-  maxim.one(waveformMax[waveformMaxNum], waveformRegConversion[reg], waveformRegValue[waveformMaxNum][reg]);
-}
-
-void waveformReset() {
-  for(int i = 0; i < 2; i++) {
-    for(int reg = 0; reg < 8; reg++) {
-      waveformRegValue[i][reg] = 0;
-      maxim.one(waveformMax[i], waveformRegConversion[reg], 0);
-    }
-  }
-}
-
-void waveform() {
-  for(int i = 0; i < 32; i++) {
-//    waveformFuncOn(i, cuorizini[i]);
-    waveformFuncOn(i, otohWF[i]);
-//    waveformFuncOn(i, wave[i]);
-//    waveformFuncOn(i, squares[i]);
-//    waveformFuncOn(i, triangles[i]);
-    delay(vel);
-  }
-}
-
-void waveformCallback(byte argc, byte *argv) {
-  // argv[0] --> [1..32] --> waveform reg [0,31]
-  int reg = argv[0] - 1;
-  // argv[0] --> [1..16] --> waveform reg [0,15]
-  byte col = argv[1] - 1;
-  waveformFuncOn(reg,col);
-}
-
-void waveformClearCallback() {
-  waveformReset();
-}
-
-////////////////////////////////////////////////////////
-// SHIFTIN
-////////////////////////////////////////////////////////
-#define SHIFTIN_MESSAGE 0xA0
-
-unsigned long shiftInPreviousMillis = 0;  // for comparison with currentMillis
-int shiftInSamplingInterval = 10;         // how often to run the main loop (in ms)
-
-byte switchVar1 = 0;
-byte switchVar2 = 0;
-
-void setupShiftIn() {
-  pinMode(OTOH_SI_LATCH, OUTPUT);
-  pinMode(OTOH_SI_CLOCK, OUTPUT);
-  pinMode(OTOH_SI_DATA, INPUT);
-}
-
-byte shiftIn(int myDataPin, int myClockPin) {
-  int i;
-  int temp = 0;
-  int pinState;
-  byte myDataIn = 0;
-  
-  pinMode(myClockPin, OUTPUT);
-  pinMode(myDataPin, INPUT);
-  
-  for (i=7; i>=0; i--){
-    digitalWrite(myClockPin, 0);
-    delayMicroseconds(1);
-    
-    temp = digitalRead(myDataPin);
-    if (temp) {
-    
-      pinState = 1;
-      myDataIn = myDataIn | (1 << i);
-    
-    }else {
-      pinState = 0;
-    }
-    
-    digitalWrite(myClockPin, 1);
-  }
-  return myDataIn;
-}
-
-void loopShiftIn() {
-  if (currentMillis - shiftInPreviousMillis > shiftInSamplingInterval) {
-    shiftInPreviousMillis += shiftInSamplingInterval;
-    
-    digitalWrite(OTOH_SI_LATCH,1);
-    delayMicroseconds(20);
-    digitalWrite(OTOH_SI_LATCH,0);
-    switchVar1 = shiftIn(OTOH_SI_DATA, OTOH_SI_CLOCK);
-    switchVar2 = shiftIn(OTOH_SI_DATA, OTOH_SI_CLOCK);
-    Serial.print(SHIFTIN_MESSAGE, BYTE);
-    Serial.print(switchVar1, BYTE);
-    Serial.print(switchVar2, BYTE);
-  }
-}
-
-////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////
-
 void sysexCallback(byte command, byte argc, byte *argv)
 {
   switch(command) {
@@ -636,6 +332,10 @@ void sysexCallback(byte command, byte argc, byte *argv)
       }
     }
     break;
+  
+  //
+  // BLINK LED
+  //
   case BLINK_LED:
     if(argc > 1) {
       delayValue = argv[0] + (argv[1] << 7);
@@ -652,18 +352,27 @@ void sysexCallback(byte command, byte argc, byte *argv)
   case TURN_OFF:
     turnOff();
     break;
+  
+  //
+  // TIMELINE
+  //
   case TIMELINE_START:
     timelineStartCallback(argc, argv);
     break;
   case TIMELINE_STOP:
     timelineStopCallback(argc, argv);
     break;
+  
+  //
+  // WAVEFORM
+  //
   case WAVEFORM:
     waveformCallback(argc, argv);
     break;
   case WAVEFORM_CLEAR:
     waveformClearCallback();
     break;
+    
   case SAMPLING_INTERVAL:
     if (argc > 1)
       samplingInterval = argv[0] + (argv[1] << 7);
