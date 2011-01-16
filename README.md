@@ -37,7 +37,7 @@ SysEx command: `0x02`
 
 Arguments:
 
- * delayValue (2 bytes)<br/>
+ * `delay` (2 bytes)<br/>
    delay time in msecs between on and off
 
 ### Turn on
@@ -65,6 +65,8 @@ Leds in the timeline matrix are automatically turned on sequentially with a dela
 At any moment there could be a maximum of 2 leds turned on, this means that there are two timelines.
 Each timeline follows a direction (clockwise or anti-clockwise) and could start and and at any point of the timeline.
 
+**Note:** timeline speed argument sets an upper limit to loadable samples length.
+
 ### Timeline start
 
 Starts a timeline.
@@ -73,15 +75,15 @@ SysEx command: `0x05`
 
 Arguments:
 
- * id (1 byte)<br/>
+ * `id` (1 byte)<br/>
    the timeline id
- * speed (2 bytes)<br/>
+ * `speed` (2 bytes)<br/>
    timeline speed in msecs
- * orientation (1 byte)<br/>
+ * `orientation` (1 byte)<br/>
    1 for clockwise, 2 for anti-clockwise orientation
- * offset (1 byte)<br/>
+ * `offset` (1 byte)<br/>
    timeline starting led, values between 0 and 55
- * limit (1 byte)<br/>
+ * `limit` (1 byte)<br/>
    timeline ending led, values between 1 and 56
 
 ### Timeline stop
@@ -92,7 +94,7 @@ SysEx command: `0x06`
 
 Arguments:
 
- * id (1 byte)<br/>
+ * `id` (1 byte)<br/>
    the timeline id
 
 ## Waveform
@@ -120,9 +122,9 @@ SysEx command: `0x07`
 
 Arguments:
 
- * register (1 byte)<br/>
+ * `register` (1 byte)<br/>
    select register, a value between 1 and 32
- * column (1 byte)<br/>
+ * `column` (1 byte)<br/>
    register value, a value between 1 and 16 (TODO: fix to match the definition - values between 0 and 15)
 
 ### Waveform clear
