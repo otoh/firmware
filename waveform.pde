@@ -88,7 +88,7 @@ void waveform() {
 void waveformCallback(byte argc, byte *argv) {
   // argv[0] --> [1..32] --> waveform reg [0,31]
   int reg = argv[0] - 1;
-  // argv[0] --> [1..16] --> waveform reg [0,15]
+  // argv[0] --> [1..16] --> waveform col [0,15]
   byte col = argv[1] - 1;
   waveformFuncOn(reg,col);
 }
