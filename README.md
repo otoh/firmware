@@ -3,6 +3,16 @@
 OTOH Firmware sketch is derived from the StandardFirmata sketch.
 The firmware sketch augments it with an interface to control the **timeline** and the **waveform**.
 
+### Resources
+
+The OTOH project uses different open source components, hardware and software.
+
+This is a list of resources about them:
+
+* Arduino ([http://arduino.cc/](http://arduino.cc/))
+* Firmata ([http://firmata.org/](http://firmata.org/))
+* Maxuino ([http://www.maxuino.org/](http://www.maxuino.org/))
+
 ## The Firmata protocol and StandardFirmata
 
 Firmata is a generic protocol for communicating with microcontrollers from software on a host computer.
