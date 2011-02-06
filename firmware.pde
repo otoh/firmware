@@ -58,6 +58,7 @@ int delayValue;
 
 #define TIMELINE_START 0x05 // 5
 #define TIMELINE_STOP  0x06 // 6
+#define TIMELINE_SPEED 0x09 // 9
 
 #define TIMELINE_DEFAULT_OFFSET 32
 #define TIMELINE_LENGTH         56
@@ -369,6 +370,9 @@ void sysexCallback(byte command, byte argc, byte *argv)
     break;
   case TIMELINE_STOP:
     timelineStopCallback(argc, argv);
+    break;
+  case TIMELINE_SPEED:
+    timelineSpeedCallback(argc, argv);
     break;
   
   //

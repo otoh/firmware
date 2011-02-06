@@ -107,6 +107,19 @@ Arguments:
  * `id` (1 byte)<br/>
    the timeline id
 
+### Timeline speed
+
+Change timeline speed.
+
+SysEx command: `0x09`
+
+Arguments:
+
+ * `id` (1 byte)<br/>
+   the timeline id
+ * `speed` (2 bytes)<br/>
+   timeline speed in msecs
+
 ## Waveform
 
 Waveform commands rules the waveform led matrix behavior.

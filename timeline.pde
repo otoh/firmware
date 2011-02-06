@@ -91,17 +91,25 @@ void timelineReset() {
   }
 }
 
+int parseTimelineId(byte argc, byte *argv) {
+  // timeline id
+  // argv[0] --> [1, 2] --> timeline [0, 1]
+  return argv[0] - 1;
+}
+
+int parseTimelineSpeed(byte argc, byte *argv) {
+  // timeline speed
+  // argv[1..2] --> speed [0,16383] ms
+  return argv[1] + (argv[2] << 7);
+}
+
 void timelineStartCallback(byte argc, byte *argv) {
   timelineReset();
   
-  // timeline id
-  // argv[0] --> [1, 2] --> timeline [0, 1]
-  int t_id = argv[0] - 1;
+  int t_id = parseTimelineId(argc, argv);
   timelineIsOn[t_id] = true;
   
-  // timeline speed
-  // argv[1..2] --> speed [0,16383] ms
-  timelineSpeed[t_id] = argv[1] + (argv[2] << 7);
+  timelineSpeed[t_id] = parseTimelineSpeed(argc, argv);
   
   // timeline orientation
   // argv[3] --> [1, 2] --> [true, false] --> [clockwise, anticlockwise]
@@ -121,11 +129,12 @@ void timelineStartCallback(byte argc, byte *argv) {
 }
 
 void timelineStopCallback(byte argc, byte *argv) {
-  // timeline id
-  // argv[0] --> [1, 2] --> timeline [0, 1]
-  int t_id = argv[0] - 1;
-  timelineIsOn[t_id] = false;
+  timelineIsOn[parseTimelineId(argc, argv)] = false;
   
   //timelinePreviousMillis[t_id] = 0;
   timelineReset();
+}
+
+void timelineSpeedCallback(byte argc, byte *argv) {
+  timelineSpeed[parseTimelineId(argc, argv)] = parseTimelineSpeed(argc, argv);
 }
