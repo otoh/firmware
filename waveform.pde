@@ -26,28 +26,30 @@ void waveformFuncOn(int x, byte val) {
     reg = x % 8;
   }
   
+  int colConversionOffset = 0;
+  
   if(x < 8) {
-    for(int i = 0; i < 4; i++) {
-      if((val >> i) & 1) {
-        if(0 == waveformMaxNum) {
-          waveformRegValue[waveformMaxNum][reg] ^= waveformColConversion[i+4];
-        }
-        else {
-          waveformRegValue[waveformMaxNum][reg] ^= waveformColConversion[i];
-        }
-      }
+    if(0 == waveformMaxNum) {
+      colConversionOffset = 4;
     }
   }
   else {
-    for(int i = 0; i < 4; i++) {
-      if((val >> i) & 1) {
-        if(0 == waveformMaxNum) {
-          waveformRegValue[waveformMaxNum][reg] ^= waveformColConversion[i];
-        }
-        else {
-          waveformRegValue[waveformMaxNum][reg] ^= waveformColConversion[i+4];
-        }
-      }
+    if(0 != waveformMaxNum) {
+      colConversionOffset = 4;
+    }
+  }
+  
+  int resetValue = 0;
+  
+  for(int i = 0; i < 4; i++) {
+    resetValue += waveformColConversion[i+colConversionOffset];
+  }
+  
+  waveformRegValue[waveformMaxNum][reg] ^= waveformRegValue[waveformMaxNum][reg] & resetValue;
+  
+  for(int i = 0; i < 4; i++) {
+    if((val >> i) & 1) {
+      waveformRegValue[waveformMaxNum][reg] ^= waveformColConversion[i+colConversionOffset];
     }
   }
   
